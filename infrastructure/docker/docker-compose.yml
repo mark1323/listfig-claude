@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # PostgreSQL (for emails + Temporal backend)
+  postgres:
+    image: postgres:15-alpine
+    container_name: listfig-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: listfig
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Temporal Server
+  temporal:
+    image: temporalio/auto-setup:1.22.4
+    container_name: listfig-temporal
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PWD=postgres
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "workflow", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Temporal UI
+  temporal-ui:
+    image: temporalio/ui:2.21.3
+    container_name: listfig-temporal-ui
+    ports:
+      - "8080:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    depends_on:
+      - temporal
+
+  # Email Processor API (FastAPI)
+  email-processor:
+    build:
+      context: ../../services/email-processor
+      dockerfile: Dockerfile
+    container_name: listfig-email-processor
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/listfig
+      - TEMPORAL_HOST=temporal:7233
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - API_KEY=${API_KEY:-dev-secret-key}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - EMAIL_DOMAINS=${EMAIL_DOMAINS:-emails.listfig.com}
+    volumes:
+      - ../../services/email-processor:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Temporal Worker (Email Processing)
+  temporal-worker:
+    build:
+      context: ../../services/email-processor
+      dockerfile: Dockerfile
+    container_name: listfig-temporal-worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/listfig
+      - TEMPORAL_HOST=temporal:7233
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ../../services/email-processor:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    command: python -m app.temporal.worker
+
+  # Haraka SMTP Server
+  haraka:
+    build:
+      context: ../../services/haraka
+      dockerfile: Dockerfile
+    container_name: listfig-haraka
+    ports:
+      - "2525:2525"  # Using 2525 for dev (25 requires root)
+    environment:
+      - EMAIL_PROCESSOR_URL=http://email-processor:8000
+      - API_KEY=${API_KEY:-dev-secret-key}
+      - EMAIL_DOMAINS=${EMAIL_DOMAINS:-emails.listfig.com}
+    volumes:
+      - ../../services/haraka:/app
+    depends_on:
+      - email-processor
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: listfig-network

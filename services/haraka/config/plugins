@@ -1,0 +1,11 @@
+# Haraka Plugins Configuration
+# Plugins are loaded in the order they appear
+
+# Log to console
+log/console
+
+# Accept mail for these domains
+rcpt_to.in_host_list
+
+# Our custom plugin to forward emails to FastAPI
+forward_to_api

@@ -1,0 +1,17 @@
+{
+  "name": "listfig-haraka",
+  "version": "1.0.0",
+  "description": "SMTP email receiver for Listfig",
+  "main": "index.js",
+  "scripts": {
+    "start": "haraka -c .",
+    "setup": "npm install && haraka -i ."
+  },
+  "dependencies": {
+    "haraka": "^3.0.2",
+    "axios": "^1.6.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

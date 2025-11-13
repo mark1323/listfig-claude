@@ -1,0 +1,5 @@
+# Accepted email domains (one per line)
+# This will be dynamically populated from EMAIL_DOMAINS env var
+# Default domains:
+emails.listfig.com
+mail.listfig.com
