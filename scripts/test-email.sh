@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Send test email to the local SMTP server
 
 set -e
